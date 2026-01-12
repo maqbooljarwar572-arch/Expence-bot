@@ -2,30 +2,23 @@ import os
 import json
 import re
 import gspread
-from flask import Flask, request
+from flask import Flask, request, Response
 from twilio.twiml.messaging_response import MessagingResponse
 from datetime import datetime
 
 app = Flask(__name__)
 
-# --- GOOGLE SHEETS SETUP (MODERN METHOD) ---
+# --- GOOGLE SHEETS SETUP ---
 def get_sheet():
-    # Load credentials from the environment variable
     creds_json = os.environ.get("GOOGLE_CREDENTIALS")
-    
     if not creds_json:
-        print("CRITICAL ERROR: GOOGLE_CREDENTIALS not found.")
+        print("CRITICAL: GOOGLE_CREDENTIALS missing.")
         return None
-
     creds_dict = json.loads(creds_json)
-    
-    # NEW: Connect using gspread's built-in tool
-    # This automatically handles the correct permissions (Scopes)
     client = gspread.service_account_from_dict(creds_dict)
-    
     return client.open("Daily Expenses").sheet1
 
-# --- LOGIC: ROMAN URDU PARSER ---
+# --- PARSER ---
 def parse_expense(text):
     text = text.lower()
     segments = re.split(r' and | aur |,|&', text)
@@ -44,20 +37,14 @@ def parse_expense(text):
         if amount_match:
             amount = int(amount_match.group())
             found_category = "Misc"
-            
             for cat, keywords in categories.items():
                 if any(word in segment for word in keywords):
                     found_category = cat
                     break
-            
-            expenses.append({
-                "amount": amount,
-                "category": found_category,
-                "raw_text": segment.strip()
-            })
+            expenses.append({"amount": amount, "category": found_category, "raw_text": segment.strip()})
     return expenses
 
-# --- WHATSAPP SERVER ---
+# --- SERVER ---
 @app.route("/whatsapp", methods=['POST'])
 def whatsapp_reply():
     incoming_msg = request.values.get('Body', '').strip()
@@ -68,7 +55,7 @@ def whatsapp_reply():
         extracted_data = parse_expense(incoming_msg)
         
         if not extracted_data:
-            msg.body("Samajh nahi aya. Try saying: '500 ka petrol' or '200 ki chai'.")
+            msg.body("Samajh nahi aya. Try: '500 ka petrol'")
         else:
             sheet = get_sheet()
             if sheet:
@@ -76,17 +63,20 @@ def whatsapp_reply():
                 current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                 for item in extracted_data:
+                    # Save to Google
                     sheet.append_row([current_date, item['category'], item['amount'], item['raw_text']])
                     response_text += f"- {item['category']}: {item['amount']}\n"
+                
                 msg.body(response_text)
             else:
-                msg.body("Error: Database connection failed.")
+                msg.body("Error: Database Disconnected")
 
     except Exception as e:
         print(f"ERROR: {e}")
-        msg.body(f"System Error: {str(e)}")
+        msg.body("System Busy (Timeout)")
 
-    return str(resp)
+    # THIS IS THE FIX: Force correct content type for Twilio
+    return Response(str(resp), mimetype="application/xml")
 
 if __name__ == "__main__":
     app.run()
