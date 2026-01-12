@@ -14,15 +14,15 @@ def get_sheet():
     creds_json = os.environ.get("GOOGLE_CREDENTIALS")
     
     if not creds_json:
-        raise Exception("CRITICAL ERROR: GOOGLE_CREDENTIALS not found in Render settings.")
+        print("CRITICAL ERROR: GOOGLE_CREDENTIALS not found.")
+        return None
 
     creds_dict = json.loads(creds_json)
     
-    # NEW: Connect using gspread's built-in tool (No extra libraries needed)
+    # NEW: Connect using gspread's built-in tool
     # This automatically handles the correct permissions (Scopes)
     client = gspread.service_account_from_dict(creds_dict)
     
-    # Open the sheet
     return client.open("Daily Expenses").sheet1
 
 # --- LOGIC: ROMAN URDU PARSER ---
@@ -71,18 +71,19 @@ def whatsapp_reply():
             msg.body("Samajh nahi aya. Try saying: '500 ka petrol' or '200 ki chai'.")
         else:
             sheet = get_sheet()
-            response_text = "✅ *Saved:*\n"
-            current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if sheet:
+                response_text = "✅ *Saved:*\n"
+                current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            for item in extracted_data:
-                sheet.append_row([current_date, item['category'], item['amount'], item['raw_text']])
-                response_text += f"- {item['category']}: {item['amount']}\n"
-            
-            msg.body(response_text)
+                for item in extracted_data:
+                    sheet.append_row([current_date, item['category'], item['amount'], item['raw_text']])
+                    response_text += f"- {item['category']}: {item['amount']}\n"
+                msg.body(response_text)
+            else:
+                msg.body("Error: Database connection failed.")
 
     except Exception as e:
-        # Improved error printing
-        print(f"ERROR DETAILS: {e}")
+        print(f"ERROR: {e}")
         msg.body(f"System Error: {str(e)}")
 
     return str(resp)
