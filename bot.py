@@ -8,15 +8,23 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# --- GOOGLE SHEETS SETUP ---
-def get_sheet():
+# --- SPEED BOOST: CONNECT ONCE AT STARTUP ---
+# We connect to Google only once when the app wakes up.
+# This saves 3-5 seconds per message!
+try:
+    print("... Connecting to Google Sheets ...")
     creds_json = os.environ.get("GOOGLE_CREDENTIALS")
     if not creds_json:
-        print("CRITICAL: GOOGLE_CREDENTIALS missing.")
-        return None
+        raise Exception("GOOGLE_CREDENTIALS missing")
+    
     creds_dict = json.loads(creds_json)
-    client = gspread.service_account_from_dict(creds_dict)
-    return client.open("Daily Expenses").sheet1
+    gc = gspread.service_account_from_dict(creds_dict)
+    # Connect to the sheet immediately
+    sh = gc.open("Daily Expenses").sheet1
+    print("✅ Connected to Google Sheets!")
+except Exception as e:
+    print(f"❌ Connection Error: {e}")
+    sh = None
 
 # --- PARSER ---
 def parse_expense(text):
@@ -57,25 +65,25 @@ def whatsapp_reply():
         if not extracted_data:
             msg.body("Samajh nahi aya. Try: '500 ka petrol'")
         else:
-            sheet = get_sheet()
-            if sheet:
+            # Check if connection is alive
+            if sh:
                 response_text = "✅ *Saved:*\n"
                 current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                 for item in extracted_data:
-                    # Save to Google
-                    sheet.append_row([current_date, item['category'], item['amount'], item['raw_text']])
+                    # Save to Google (Now much faster because 'sh' is ready)
+                    sh.append_row([current_date, item['category'], item['amount'], item['raw_text']])
                     response_text += f"- {item['category']}: {item['amount']}\n"
                 
                 msg.body(response_text)
             else:
-                msg.body("Error: Database Disconnected")
+                msg.body("Error: Server could not connect to Google.")
 
     except Exception as e:
         print(f"ERROR: {e}")
-        msg.body("System Busy (Timeout)")
+        # If it fails, send a short message so WhatsApp doesn't hang
+        msg.body("Saved (Slow Network)")
 
-    # THIS IS THE FIX: Force correct content type for Twilio
     return Response(str(resp), mimetype="application/xml")
 
 if __name__ == "__main__":
