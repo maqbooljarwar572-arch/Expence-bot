@@ -3,33 +3,29 @@ import json
 import re
 import gspread
 from flask import Flask, request
-from oauth2client.service_account import ServiceAccountCredentials
 from twilio.twiml.messaging_response import MessagingResponse
 from datetime import datetime
 
 app = Flask(__name__)
 
-# --- GOOGLE SHEETS SETUP (UPDATED SCOPES) ---
+# --- GOOGLE SHEETS SETUP (MODERN METHOD) ---
 def get_sheet():
-    # UPDATED: We now use the modern 'spreadsheets' scope instead of 'feeds'
-    scope = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    
+    # Load credentials from the environment variable
     creds_json = os.environ.get("GOOGLE_CREDENTIALS")
     
     if not creds_json:
-        raise Exception("Google Credentials not found in Environment Variables.")
-        
+        raise Exception("CRITICAL ERROR: GOOGLE_CREDENTIALS not found in Render settings.")
+
     creds_dict = json.loads(creds_json)
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    client = gspread.authorize(creds)
     
-    # Make sure the sheet name is exactly "Daily Expenses"
+    # NEW: Connect using gspread's built-in tool (No extra libraries needed)
+    # This automatically handles the correct permissions (Scopes)
+    client = gspread.service_account_from_dict(creds_dict)
+    
+    # Open the sheet
     return client.open("Daily Expenses").sheet1
 
-# --- LOGIC: UNDERSTAND ROMAN URDU ---
+# --- LOGIC: ROMAN URDU PARSER ---
 def parse_expense(text):
     text = text.lower()
     segments = re.split(r' and | aur |,|&', text)
@@ -85,10 +81,9 @@ def whatsapp_reply():
             msg.body(response_text)
 
     except Exception as e:
-        # This will now print the full error details if something breaks
-        error_message = f"Error aya hai: {e}"
-        print(error_message) # Print to Render logs
-        msg.body(error_message)
+        # Improved error printing
+        print(f"ERROR DETAILS: {e}")
+        msg.body(f"System Error: {str(e)}")
 
     return str(resp)
 
