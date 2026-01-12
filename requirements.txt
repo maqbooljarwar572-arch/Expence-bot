@@ -1,5 +1,4 @@
 flask
-twilio
 gspread
-google-auth
+requests
 gunicorn
